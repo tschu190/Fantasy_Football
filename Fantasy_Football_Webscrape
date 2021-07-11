@@ -1,8 +1,8 @@
-
-
-#Source File
-#https://towardsdatascience.com/scraping-nfl-stats-to-compare-quarterback-efficiencies-4989642e02fe
-
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jul  5 14:44:02 2021
+@author: tschu
+"""
 # Import scraping modules
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
@@ -10,29 +10,97 @@ import pandas as pd
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from xgboost import plot_importance
+from xgboost import XGBClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 
-# URL of page
-url = 'https://www.pro-football-reference.com/years/2020/passing.htm'
+# URL with 2020 Fantasy Football Data
+url = 'https://www.pro-football-reference.com/years/2020/fantasy.htm'
 # Open URL and pass to BeautifulSoup
 html = urlopen(url)
 stats_page = BeautifulSoup(html)
 
 # Collect table headers
-column_headers = stats_page.findAll('tr')[0]
+column_headers = stats_page.findAll('tr')[1]
 column_headers = [i.getText() for i in column_headers.findAll('th')]
 
 # Collect table rows
 rows = stats_page.findAll('tr')[1:]
-# Get stats from each row
-qb_stats = []
-for i in range(len(rows)):
-  qb_stats.append([col.getText() for col in rows[i].findAll('td')])
-  
-#print(qb_stats[0])
 
-# Create DataFrame from our scraped data
-data = pd.DataFrame(qb_stats, columns=column_headers[1:])
-print(data.head(15))
-DF=data.sort_values('Age')
-print(DF.head(15))
+# Get stats from each row
+player_stats = []
+for i in range(len(rows)):
+  player_stats.append([col.getText() for col in rows[i].findAll('td')])
+  
+#Create Pandas Dataframe, print, then clean
+data = pd.DataFrame(player_stats, columns=column_headers[1:])
+new_columns = data.columns.values
+new_columns[-10] = 'Fumble_TD'
+new_columns[-11] = 'Fumble_Loss'
+new_columns[-13] = 'Rec_TD'
+new_columns[-14] = 'Rec_Yrd_per_Attmp'
+new_columns[-15] = 'Rec_Yds'
+new_columns[-15] = 'Total_Rec'
+new_columns[-17] = 'Pass_Targets'
+new_columns[-18] = 'Rush_TD'
+new_columns[-19] = 'Rush_Yrds_per_Attmp'
+new_columns[-20] = 'Rush_Yds'
+new_columns[-21] = 'Rush_Att'
+new_columns[-23] = 'Pass_TD'
+new_columns[-24] = 'Pass_Yds'
+new_columns[-25] = 'Pass_Att'
+new_columns[-28] = 'Games_Played'
+new_columns[-27] = 'Games_Started'
+new_columns[-26] = 'Pass_Completion'
+
+
+data.columns = new_columns
+new_data=data.drop(['Player','Tm','FantPos','OvRank','PosRank','VBD','FDPt','PPR','FantPt'],axis=1)
+print(new_data.columns)
+
+# Clean null values
+df = new_data.replace("", 0)
+df = df.dropna(axis=0, subset=['Age'])
+
+#cols = ['YA', 'YR','PPR','DKPt','FDPt']
+#df[cols] = df[cols].applymap(np.int64)
+
+print(df.head(50))
+
+compression_opts = dict(method='zip',
+                        archive_name='out.csv')  
+df.to_csv('out.zip', index=False,
+          compression=compression_opts)
+
+
+# Convert data to numerical values
+for i in df:
+  df[i] = pd.to_numeric(df[i])
+
+print(df.dtypes)
+df['DKPt'],class_names = pd.factorize(df['DKPt'])
+
+print(class_names)
+print(df['DKPt'].unique())
+
+# Select the predictor feature and the target variable / :-5 = Draftking points 
+X = df.iloc[:,:-1]
+y = df.iloc[:,-1]
+seed=0
+test_size=0.25
+# split data randomly into 70% training and 30% test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
+print(X_train.head(50))
+print(y_train.head(50))
+model = XGBClassifier()
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+accuracy = accuracy_score(y_test, predictions)
+print("Accuracy: %.2f%%" % (accuracy * 100.0))
+
+plot_importance(model, max_num_features=22) # top 20 most important features
+plt.show()
+
+
 
